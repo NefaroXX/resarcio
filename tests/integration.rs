@@ -2,29 +2,29 @@ use std::fs;
 use std::process::{Command, Stdio};
 use tempfile::TempDir;
 
-/// Helper: run accord with args in a directory
-fn run_accord(dir: &std::path::Path, args: &[&str]) -> (bool, String, String) {
-    let output = Command::new(env!("CARGO_BIN_EXE_accord"))
+/// Helper: run resarcio with args in a directory
+fn run_resarcio(dir: &std::path::Path, args: &[&str]) -> (bool, String, String) {
+    let output = Command::new(env!("CARGO_BIN_EXE_resarcio"))
         .current_dir(dir)
         .args(args)
         .output()
-        .expect("failed to execute accord");
+        .expect("failed to execute resarcio");
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     (output.status.success(), stdout, stderr)
 }
 
-/// Helper: run accord with stdin
-fn run_accord_stdin(dir: &std::path::Path, args: &[&str], input: &str) -> (bool, String, String) {
-    let output = Command::new(env!("CARGO_BIN_EXE_accord"))
+/// Helper: run resarcio with stdin
+fn run_resarcio_stdin(dir: &std::path::Path, args: &[&str], input: &str) -> (bool, String, String) {
+    let output = Command::new(env!("CARGO_BIN_EXE_resarcio"))
         .current_dir(dir)
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("failed to spawn accord")
+        .expect("failed to spawn resarcio")
         .write_all_with_stdin(input);
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -76,10 +76,10 @@ fn single_file_apply() {
         "--- a/hello.txt\n+++ b/hello.txt\n@@ -1,3 +1,3 @@\n line1\n-old\n+new\n line3\n",
     );
 
-    let (ok, stdout, stderr) = run_accord(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
+    let (ok, stdout, stderr) = run_resarcio(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
     assert!(
         ok,
-        "accord should succeed; stdout={stdout}; stderr={stderr}"
+        "resarcio should succeed; stdout={stdout}; stderr={stderr}"
     );
     assert!(stdout.contains("applied: hello.txt"));
     assert_eq!(read_file(d, "hello.txt"), "line1\nnew\nline3\n");
@@ -97,7 +97,7 @@ fn multi_file_patch() {
     write_file(d, "b.txt", "xxx\nyyy\n");
     write_file(d, "patch.diff", "--- a/a.txt\n+++ b/a.txt\n@@ -1,2 +1,2 @@\n aaa\n-bbb\n+BBB\n--- a/b.txt\n+++ b/b.txt\n@@ -1,2 +1,2 @@\n xxx\n-yyy\n+YYY\n");
 
-    let (ok, stdout, _) = run_accord(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
+    let (ok, stdout, _) = run_resarcio(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
     assert!(ok);
     assert!(stdout.contains("applied: a.txt"));
     assert!(stdout.contains("applied: b.txt"));
@@ -120,7 +120,7 @@ fn line_insertion() {
         "--- a/file.txt\n+++ b/file.txt\n@@ -1,2 +1,3 @@\n line1\n+line2\n line3\n",
     );
 
-    let (ok, _, _) = run_accord(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
+    let (ok, _, _) = run_resarcio(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
     assert!(ok);
     assert_eq!(read_file(d, "file.txt"), "line1\nline2\nline3\n");
 }
@@ -140,7 +140,7 @@ fn line_deletion() {
         "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,2 @@\n line1\n-line2\n line3\n",
     );
 
-    let (ok, _, _) = run_accord(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
+    let (ok, _, _) = run_resarcio(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
     assert!(ok);
     assert_eq!(read_file(d, "file.txt"), "line1\nline3\n");
 }
@@ -159,7 +159,7 @@ fn new_file_creation() {
         "--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1 @@\n+hello world\n",
     );
 
-    let (ok, stdout, stderr) = run_accord(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
+    let (ok, stdout, stderr) = run_resarcio(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
     assert!(
         ok,
         "new_file_creation failed; stdout={stdout}; stderr={stderr}"
@@ -182,7 +182,7 @@ fn file_deletion() {
         "--- a/doomed.txt\n+++ /dev/null\n@@ -1 +0 @@\n-goodbye\n",
     );
 
-    let (ok, stdout, _) = run_accord(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
+    let (ok, stdout, _) = run_resarcio(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
     assert!(ok);
     assert!(stdout.contains("deleted: doomed.txt"));
     assert!(!d.join("doomed.txt").exists());
@@ -203,8 +203,8 @@ fn context_mismatch_rejection() {
         "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,3 @@\n line1\n-old\n+new\n line3\n",
     );
 
-    let (ok, stdout, stderr) = run_accord(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
-    assert!(!ok, "accord should fail on context mismatch");
+    let (ok, stdout, stderr) = run_resarcio(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
+    assert!(!ok, "resarcio should fail on context mismatch");
     assert!(
         stderr.contains("context mismatch") || stdout.contains("context mismatch"),
         "should report context mismatch"
@@ -229,7 +229,7 @@ fn dry_run_leaves_tree_unmodified() {
         "--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-original\n+modified\n",
     );
 
-    let (ok, stdout, _) = run_accord(d, &["-d", d.to_str().unwrap(), "--dry-run", "patch.diff"]);
+    let (ok, stdout, _) = run_resarcio(d, &["-d", d.to_str().unwrap(), "--dry-run", "patch.diff"]);
     assert!(ok);
     assert!(stdout.contains("would apply"));
     assert!(stdout.contains("dry run complete"));
@@ -250,7 +250,7 @@ fn absolute_path_rejection() {
         "--- /etc/passwd\n+++ /etc/passwd\n@@ -1 +1 @@\n-old\n+new\n",
     );
 
-    let (ok, _, stderr) = run_accord(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
+    let (ok, _, stderr) = run_resarcio(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
     assert!(!ok, "should reject absolute path");
     assert!(stderr.contains("unsafe path"), "should mention unsafe path");
 }
@@ -269,7 +269,7 @@ fn path_traversal_rejection() {
         "--- a/../etc/passwd\n+++ b/../etc/passwd\n@@ -1 +1 @@\n-old\n+new\n",
     );
 
-    let (ok, _, stderr) = run_accord(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
+    let (ok, _, stderr) = run_resarcio(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
     assert!(!ok, "should reject path traversal");
     assert!(stderr.contains("unsafe path"));
 }
@@ -289,7 +289,8 @@ fn check_mode_applies_nothing() {
         "--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-original\n+modified\n",
     );
 
-    let (ok, stdout, stderr) = run_accord(d, &["-d", d.to_str().unwrap(), "--check", "patch.diff"]);
+    let (ok, stdout, stderr) =
+        run_resarcio(d, &["-d", d.to_str().unwrap(), "--check", "patch.diff"]);
     assert!(ok, "check mode failed; stdout={stdout}; stderr={stderr}");
     assert!(stdout.contains("check passed"));
     assert_eq!(read_file(d, "file.txt"), "original\n");
@@ -306,7 +307,7 @@ fn no_newline_marker() {
     write_file(d, "file.txt", "line1\nold");
     write_file(d, "patch.diff", "--- a/file.txt\n+++ b/file.txt\n@@ -1,2 +1,2 @@\n line1\n-old\n+new\n\\ No newline at end of file\n");
 
-    let (ok, _, _) = run_accord(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
+    let (ok, _, _) = run_resarcio(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
     assert!(ok);
     let content = read_file(d, "file.txt");
     assert_eq!(content, "line1\nnew");
@@ -325,7 +326,7 @@ fn reads_from_stdin() {
 
     let diff = "--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-hello\n+world\n";
 
-    let (ok, _, _) = run_accord_stdin(d, &["-d", d.to_str().unwrap()], diff);
+    let (ok, _, _) = run_resarcio_stdin(d, &["-d", d.to_str().unwrap()], diff);
     assert!(ok);
     assert_eq!(read_file(d, "file.txt"), "world\n");
 }
@@ -344,7 +345,7 @@ fn missing_file_rejection() {
         "--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-old\n+new\n",
     );
 
-    let (ok, _, stderr) = run_accord(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
+    let (ok, _, stderr) = run_resarcio(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
     assert!(!ok);
     assert!(stderr.contains("I/O error") || stderr.contains("No such file"));
 }
@@ -359,7 +360,7 @@ fn empty_diff_rejection() {
     let d = dir.path();
     write_file(d, "patch.diff", "nothing here\n");
 
-    let (ok, _, stderr) = run_accord(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
+    let (ok, _, stderr) = run_resarcio(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
     assert!(!ok);
     assert!(stderr.contains("empty diff"));
 }
@@ -375,7 +376,7 @@ fn multiple_hunks() {
     write_file(d, "file.txt", "aaa\nbbb\nccc\nddd\neee\nfff\n");
     write_file(d, "patch.diff", "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,3 @@\n aaa\n-bbb\n+BBB\n ccc\n@@ -4,3 +4,3 @@\n ddd\n-eee\n+EEE\n fff\n");
 
-    let (ok, _, _) = run_accord(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
+    let (ok, _, _) = run_resarcio(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
     assert!(ok);
     assert_eq!(read_file(d, "file.txt"), "aaa\nBBB\nccc\nddd\nEEE\nfff\n");
 }

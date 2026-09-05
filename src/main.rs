@@ -8,12 +8,12 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::process;
 
-/// accord - Apply unified diffs to a working tree
+/// resarcio - Apply unified diffs to a working tree
 ///
 /// The write-side counterpart to diff. Applies unified diff patches
 /// (git-style) to files in a target directory.
 #[derive(ClapParser)]
-#[command(name = "accord", version, about)]
+#[command(name = "resarcio", version, about)]
 struct Cli {
     /// Target directory to apply the patch to (default: current directory)
     #[arg(short = 'd', long = "directory", default_value = ".")]
@@ -37,7 +37,7 @@ fn main() {
     let exit_code = match run(cli) {
         Ok(()) => 0,
         Err(e) => {
-            eprintln!("accord: error: {}", e);
+            eprintln!("resarcio: error: {}", e);
             1
         }
     };
@@ -103,9 +103,9 @@ fn run(cli: Cli) -> Result<(), error::AccordError> {
     }
 
     if cli.dry_run {
-        println!("accord: dry run complete — no files were modified");
+        println!("resarcio: dry run complete — no files were modified");
     } else if cli.check {
-        println!("accord: check passed — patch applies cleanly");
+        println!("resarcio: check passed — patch applies cleanly");
     }
 
     Ok(())

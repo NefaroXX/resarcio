@@ -30,11 +30,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - run: cargo build --release --locked --target ${{ matrix.target }}
-      - run: mv target/${{ matrix.target }}/release/accord${{ matrix.ext }} accord-${{ matrix.target }}${{ matrix.ext }}
+      - run: mv target/${{ matrix.target }}/release/resarcio${{ matrix.ext }} resarcio-${{ matrix.target }}${{ matrix.ext }}
       - uses: actions/upload-artifact@v4
         with:
-          name: accord-${{ matrix.target }}
-          path: accord-${{ matrix.target }}${{ matrix.ext }}
+          name: resarcio-${{ matrix.target }}
+          path: resarcio-${{ matrix.target }}${{ matrix.ext }}
 
   publish:
     name: Create release
@@ -58,4 +58,4 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --title "$tag" \
             --generate-notes \
-            artifacts/accord-*
+            artifacts/resarcio-*

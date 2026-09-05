@@ -1,4 +1,4 @@
-# accord
+# resarcio
 
 A CLI tool that applies unified diffs to files — the write-side counterpart to `diff`.
 
@@ -7,7 +7,7 @@ Part of the [NefaroXX](https://github.com/NefaroXX) ecosystem:
 | Tool | Role |
 |------|------|
 | [**ruling**](https://github.com/NefaroXX/ruling) | Read side — computes diffs between files |
-| [**accord**](https://github.com/NefaroXX/accord) | Write side — applies unified patches to a working tree |
+| [**resarcio**](https://github.com/NefaroXX/resarcio) | Write side — applies unified patches to a working tree |
 
 ## Features
 
@@ -24,23 +24,23 @@ Part of the [NefaroXX](https://github.com/NefaroXX) ecosystem:
 ## Install
 
 ```sh
-cargo install accord
+cargo install resarcio
 ```
 
 ## Usage
 
 ```sh
 # Apply a patch file
-accord -d /path/to/project fix.diff
+resarcio -d /path/to/project fix.diff
 
 # Dry run — show what would change
-accord -d /path/to/project -n fix.diff
+resarcio -d /path/to/project -n fix.diff
 
 # Check mode — verify patch applies cleanly
-accord -d /path/to/project -c fix.diff
+resarcio -d /path/to/project -c fix.diff
 
 # Read from stdin
-cat fix.diff | accord -d /path/to/project
+cat fix.diff | resarcio -d /path/to/project
 ```
 
 ## Diff format

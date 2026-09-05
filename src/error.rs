@@ -1,6 +1,6 @@
 use std::fmt;
 
-/// Structured error type for accord operations.
+/// Structured error type for resarcio operations.
 #[derive(Debug)]
 pub enum AccordError {
     /// The diff could not be parsed.

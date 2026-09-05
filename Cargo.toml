@@ -1,5 +1,5 @@
 [package]
-name = "accord"
+name = "resarcio"
 version = "0.1.0"
 edition = "2021"
 description = "Apply unified diffs to a working tree - the write-side counterpart to diff"
