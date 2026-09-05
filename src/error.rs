@@ -2,7 +2,7 @@ use std::fmt;
 
 /// Structured error type for resarcio operations.
 #[derive(Debug)]
-pub enum AccordError {
+pub enum ResarcioError {
     /// The diff could not be parsed.
     Parse(String),
     /// A context line in a hunk did not match the file content.
@@ -29,11 +29,11 @@ pub enum AccordError {
     EmptyDiff,
 }
 
-impl fmt::Display for AccordError {
+impl fmt::Display for ResarcioError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AccordError::Parse(msg) => write!(f, "parse error: {}", msg),
-            AccordError::ContextMismatch {
+            ResarcioError::Parse(msg) => write!(f, "parse error: {}", msg),
+            ResarcioError::ContextMismatch {
                 file,
                 hunk_line,
                 expected,
@@ -44,30 +44,30 @@ impl fmt::Display for AccordError {
                 "context mismatch in `{}` at hunk line {} (file line {}):\n  expected: {:?}\n  found:    {:?}",
                 file, hunk_line, file_line, expected, found
             ),
-            AccordError::UnsafePath(p) => write!(f, "unsafe path rejected: {}", p),
-            AccordError::Io(e) => write!(f, "I/O error: {}", e),
-            AccordError::FileNotFound(p) => write!(f, "file not found: {}", p),
-            AccordError::IsADirectory(p) => write!(f, "expected file but found directory: {}", p),
-            AccordError::FileAlreadyExists(p) => write!(f, "file already exists: {}", p),
-            AccordError::DeleteTargetNotFound(p) => {
+            ResarcioError::UnsafePath(p) => write!(f, "unsafe path rejected: {}", p),
+            ResarcioError::Io(e) => write!(f, "I/O error: {}", e),
+            ResarcioError::FileNotFound(p) => write!(f, "file not found: {}", p),
+            ResarcioError::IsADirectory(p) => write!(f, "expected file but found directory: {}", p),
+            ResarcioError::FileAlreadyExists(p) => write!(f, "file already exists: {}", p),
+            ResarcioError::DeleteTargetNotFound(p) => {
                 write!(f, "cannot delete - file not found: {}", p)
             }
-            AccordError::EmptyDiff => write!(f, "empty diff - no file patches found"),
+            ResarcioError::EmptyDiff => write!(f, "empty diff - no file patches found"),
         }
     }
 }
 
-impl std::error::Error for AccordError {
+impl std::error::Error for ResarcioError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            AccordError::Io(e) => Some(e),
+            ResarcioError::Io(e) => Some(e),
             _ => None,
         }
     }
 }
 
-impl From<std::io::Error> for AccordError {
+impl From<std::io::Error> for ResarcioError {
     fn from(e: std::io::Error) -> Self {
-        AccordError::Io(e)
+        ResarcioError::Io(e)
     }
 }

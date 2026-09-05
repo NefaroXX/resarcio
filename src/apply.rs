@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::error::AccordError;
+use crate::error::ResarcioError;
 use crate::parse::{FilePatch, Hunk, HunkLine};
 
 /// Apply a file patch to the target directory.
@@ -8,7 +8,7 @@ pub fn apply_file_patch(
     target_dir: &Path,
     patch: &FilePatch,
     dry_run: bool,
-) -> Result<(), AccordError> {
+) -> Result<(), ResarcioError> {
     if patch.is_new_file {
         let target = target_dir.join(&patch.new_path);
         return apply_new_file(&target, patch, dry_run);
@@ -22,7 +22,7 @@ pub fn apply_file_patch(
     let target = target_dir.join(&patch.new_path);
 
     // Read existing file
-    let content = std::fs::read_to_string(&target).map_err(AccordError::Io)?;
+    let content = std::fs::read_to_string(&target).map_err(ResarcioError::Io)?;
     let old_lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
     // Track whether the file ends with a newline
     let had_newline = content.ends_with('\n');
@@ -33,7 +33,6 @@ pub fn apply_file_patch(
 
     for hunk in &patch.hunks {
         apply_hunk(
-            &old_lines,
             &mut new_lines,
             hunk,
             &mut line_offset,
@@ -56,7 +55,7 @@ pub fn apply_file_patch(
             output.push('\n');
         }
 
-        std::fs::write(&target, output).map_err(AccordError::Io)?;
+        std::fs::write(&target, output).map_err(ResarcioError::Io)?;
         println!("applied: {}", patch.new_path);
     } else {
         println!("would apply: {}", patch.new_path);
@@ -66,9 +65,9 @@ pub fn apply_file_patch(
 }
 
 /// Apply a new-file patch.
-fn apply_new_file(target: &Path, patch: &FilePatch, dry_run: bool) -> Result<(), AccordError> {
+fn apply_new_file(target: &Path, patch: &FilePatch, dry_run: bool) -> Result<(), ResarcioError> {
     if target.exists() {
-        return Err(AccordError::FileAlreadyExists(patch.new_path.clone()));
+        return Err(ResarcioError::FileAlreadyExists(patch.new_path.clone()));
     }
 
     let content = extract_added_content(patch)?;
@@ -81,14 +80,14 @@ fn apply_new_file(target: &Path, patch: &FilePatch, dry_run: bool) -> Result<(),
     if !dry_run {
         // Create parent directories if needed
         if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent).map_err(AccordError::Io)?;
+            std::fs::create_dir_all(parent).map_err(ResarcioError::Io)?;
         }
         if has_no_newline {
-            std::fs::write(target, &content).map_err(AccordError::Io)?;
+            std::fs::write(target, &content).map_err(ResarcioError::Io)?;
         } else {
             let mut output = content;
             output.push('\n');
-            std::fs::write(target, output).map_err(AccordError::Io)?;
+            std::fs::write(target, output).map_err(ResarcioError::Io)?;
         }
         println!("created: {}", patch.new_path);
     } else {
@@ -99,13 +98,13 @@ fn apply_new_file(target: &Path, patch: &FilePatch, dry_run: bool) -> Result<(),
 }
 
 /// Apply a file deletion patch.
-fn apply_delete_file(target: &Path, patch: &FilePatch, dry_run: bool) -> Result<(), AccordError> {
+fn apply_delete_file(target: &Path, patch: &FilePatch, dry_run: bool) -> Result<(), ResarcioError> {
     if !target.exists() {
-        return Err(AccordError::DeleteTargetNotFound(patch.old_path.clone()));
+        return Err(ResarcioError::DeleteTargetNotFound(patch.old_path.clone()));
     }
 
     if !dry_run {
-        std::fs::remove_file(target).map_err(AccordError::Io)?;
+        std::fs::remove_file(target).map_err(ResarcioError::Io)?;
         println!("deleted: {}", patch.old_path);
     } else {
         println!("would delete: {}", patch.old_path);
@@ -115,7 +114,7 @@ fn apply_delete_file(target: &Path, patch: &FilePatch, dry_run: bool) -> Result<
 }
 
 /// Extract the content from Added lines in a patch.
-fn extract_added_content(patch: &FilePatch) -> Result<String, AccordError> {
+fn extract_added_content(patch: &FilePatch) -> Result<String, ResarcioError> {
     let mut lines = Vec::new();
     for hunk in &patch.hunks {
         for line in &hunk.lines {
@@ -131,39 +130,46 @@ fn extract_added_content(patch: &FilePatch) -> Result<String, AccordError> {
 
 /// Apply a single hunk to the new_lines vector.
 fn apply_hunk(
-    old_lines: &[String],
     new_lines: &mut Vec<String>,
     hunk: &Hunk,
     line_offset: &mut isize,
     file_path: &str,
     dry_run: bool,
-) -> Result<(), AccordError> {
+) -> Result<(), ResarcioError> {
     let hunk_old_start = hunk.old_start; // 1-based
+    let old_count = hunk_old_count(hunk);
 
-    // Find where the hunk matches in the old file.
+    // Compute where to start searching in new_lines.
     let search_start = if hunk_old_start == 0 {
         0
     } else {
         (hunk_old_start as isize + *line_offset - 1).max(0) as usize
     };
 
-    let match_pos = find_hunk_match(old_lines, &hunk.lines, search_start);
-
-    let match_pos = match match_pos {
-        Some(pos) => pos,
-        None => {
-            if hunk_old_count(hunk) == 0 {
-                0
-            } else {
+    // Pure insertion (old_count == 0): no existing lines to match, just insert
+    // at the computed position. For pure insertions, old_start is the 1-based
+    // line number AFTER which to insert, so the 0-indexed position is old_start
+    // itself (not old_start - 1 as for replacements).
+    let match_pos = if old_count == 0 {
+        if hunk_old_start == 0 {
+            0
+        } else {
+            (hunk_old_start as isize + *line_offset).max(0) as usize
+        }
+    } else {
+        // Search new_lines for where the context matches.
+        match find_hunk_match(new_lines, &hunk.lines, search_start) {
+            Some(pos) => pos,
+            None => {
                 let first_ctx = hunk.lines.iter().find_map(|l| match l {
                     HunkLine::Context(s) => Some(s.as_str()),
                     _ => None,
                 });
-                return Err(AccordError::ContextMismatch {
+                return Err(ResarcioError::ContextMismatch {
                     file: file_path.to_string(),
                     hunk_line: hunk.old_start,
                     expected: first_ctx.unwrap_or("<empty>").to_string(),
-                    found: old_lines
+                    found: new_lines
                         .get(search_start)
                         .map(|s| s.as_str())
                         .unwrap_or("<end of file>")
@@ -189,7 +195,6 @@ fn apply_hunk(
     }
 
     // Replace the old lines with the new lines
-    let old_count = hunk_old_count(hunk);
     let replace_end = (match_pos + old_count).min(new_lines.len());
 
     new_lines.splice(match_pos..replace_end, replacement);
@@ -213,14 +218,18 @@ fn hunk_old_count(hunk: &Hunk) -> usize {
         .filter(|l| matches!(l, HunkLine::Context(_) | HunkLine::Removed(_)))
         .count()
 }
-
-/// Find where a hunk matches in old_lines starting from `start`.
+/// Find where a hunk matches in the current file content.
 ///
-/// Walks hunk lines and old file lines in parallel: Context and Removed lines
-/// both consume old-file lines and must match exactly; Added lines do not.
-fn find_hunk_match(old_lines: &[String], hunk_lines: &[HunkLine], start: usize) -> Option<usize> {
-    if hunk_lines.is_empty() || old_lines.is_empty() {
+/// Searches `lines` for a position where all Context and Removed hunk lines
+/// match exactly. This operates on the current state of the file (after prior
+/// hunks have been applied), so context lines must match the modified content.
+fn find_hunk_match(lines: &[String], hunk_lines: &[HunkLine], start: usize) -> Option<usize> {
+    if hunk_lines.is_empty() {
         return Some(start);
+    }
+
+    if lines.is_empty() {
+        return None;
     }
 
     // Find first Context line to anchor the search.
@@ -228,7 +237,7 @@ fn find_hunk_match(old_lines: &[String], hunk_lines: &[HunkLine], start: usize) 
         .iter()
         .position(|l| matches!(l, HunkLine::Context(_)));
 
-    // If no context lines, we can't anchor — use Removed lines to anchor instead.
+    // If no context lines, use Removed lines to anchor instead.
     let anchor_offset = first_ctx_offset.or_else(|| {
         hunk_lines
             .iter()
@@ -237,7 +246,7 @@ fn find_hunk_match(old_lines: &[String], hunk_lines: &[HunkLine], start: usize) 
 
     let anchor_offset = match anchor_offset {
         Some(o) => o,
-        // Pure Added hunk (e.g. entire file is additions) — match at start.
+        // Pure Added hunk — match at start.
         None => return Some(start),
     };
 
@@ -246,23 +255,23 @@ fn find_hunk_match(old_lines: &[String], hunk_lines: &[HunkLine], start: usize) 
         _ => unreachable!(),
     };
 
-    let end_limit = old_lines.len().saturating_sub(1);
+    let end_limit = lines.len().saturating_sub(1);
 
     'outer: for i in start..=end_limit {
-        if old_lines[i] != anchor_text {
+        if lines[i] != anchor_text {
             continue;
         }
 
-        // Candidate: old_lines[i] matches the anchor line.
-        // Walk the hunk from anchor_offset forward, advancing old_idx in parallel.
-        let mut old_idx = i;
+        // Candidate: lines[i] matches the anchor line.
+        // Walk the hunk from anchor_offset forward, advancing idx in parallel.
+        let mut idx = i;
         for hunk_line in &hunk_lines[anchor_offset..] {
             match hunk_line {
                 HunkLine::Context(s) | HunkLine::Removed(s) => {
-                    if old_idx >= old_lines.len() || old_lines[old_idx] != *s {
+                    if idx >= lines.len() || lines[idx] != *s {
                         continue 'outer;
                     }
-                    old_idx += 1;
+                    idx += 1;
                 }
                 HunkLine::Added(_) | HunkLine::NoNewlineMarker => {}
             }
@@ -270,20 +279,20 @@ fn find_hunk_match(old_lines: &[String], hunk_lines: &[HunkLine], start: usize) 
 
         // Also verify any hunk lines BEFORE anchor_offset.
         // Walk backwards from anchor_offset.
-        let mut old_idx_before = i;
+        let mut idx_before = i;
         for hunk_line in hunk_lines[..anchor_offset].iter().rev() {
             match hunk_line {
                 HunkLine::Context(s) | HunkLine::Removed(s) => {
-                    if old_idx_before == 0 || old_lines[old_idx_before - 1] != *s {
+                    if idx_before == 0 || lines[idx_before - 1] != *s {
                         continue 'outer;
                     }
-                    old_idx_before -= 1;
+                    idx_before -= 1;
                 }
                 HunkLine::Added(_) | HunkLine::NoNewlineMarker => {}
             }
         }
 
-        return Some(old_idx_before);
+        return Some(idx_before);
     }
 
     None

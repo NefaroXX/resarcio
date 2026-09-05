@@ -1,4 +1,4 @@
-use crate::error::AccordError;
+use crate::error::ResarcioError;
 
 /// A single line in a hunk.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,7 +62,7 @@ fn strip_diff_prefix(path: &str) -> &str {
 }
 
 /// Parse a `@@ -old_start,old_count +new_start,new_count @@` header.
-fn parse_hunk_header(line: &str) -> Result<(usize, usize, usize, usize), AccordError> {
+fn parse_hunk_header(line: &str) -> Result<(usize, usize, usize, usize), ResarcioError> {
     let line = line.trim_start_matches('@');
     let line = line.trim_end_matches('@');
     let line = line.trim();
@@ -71,19 +71,19 @@ fn parse_hunk_header(line: &str) -> Result<(usize, usize, usize, usize), AccordE
     // Old part
     let (old_part, rest) = line
         .split_once(' ')
-        .ok_or_else(|| AccordError::Parse(format!("invalid hunk header: {}", line)))?;
+        .ok_or_else(|| ResarcioError::Parse(format!("invalid hunk header: {}", line)))?;
 
     let (old_start, old_count) = parse_range(old_part)
-        .map_err(|_| AccordError::Parse(format!("invalid old range: {}", old_part)))?;
+        .map_err(|_| ResarcioError::Parse(format!("invalid old range: {}", old_part)))?;
 
     // New part (may have trailing space/context after @@)
     let new_part = rest
         .split_whitespace()
         .next()
-        .ok_or_else(|| AccordError::Parse(format!("invalid hunk header: {}", line)))?;
+        .ok_or_else(|| ResarcioError::Parse(format!("invalid hunk header: {}", line)))?;
 
     let (new_start, new_count) = parse_range(new_part)
-        .map_err(|_| AccordError::Parse(format!("invalid new range: {}", new_part)))?;
+        .map_err(|_| ResarcioError::Parse(format!("invalid new range: {}", new_part)))?;
 
     Ok((old_start, old_count, new_start, new_count))
 }
@@ -105,7 +105,7 @@ fn parse_range(s: &str) -> Result<(usize, usize), ()> {
 }
 
 /// Parse a unified diff string into a Diff structure.
-pub fn parse_diff(input: &str) -> Result<Diff, AccordError> {
+pub fn parse_diff(input: &str) -> Result<Diff, ResarcioError> {
     let lines: Vec<&str> = input.lines().collect();
     let mut files = Vec::new();
     let mut i = 0;
@@ -124,7 +124,7 @@ pub fn parse_diff(input: &str) -> Result<Diff, AccordError> {
 
         // Parse --- line
         if i >= lines.len() || !lines[i].starts_with("--- ") {
-            return Err(AccordError::Parse(format!(
+            return Err(ResarcioError::Parse(format!(
                 "expected `---` header at line {}",
                 i + 1
             )));
@@ -135,7 +135,7 @@ pub fn parse_diff(input: &str) -> Result<Diff, AccordError> {
 
         // Parse +++ line
         if i >= lines.len() || !lines[i].starts_with("+++ ") {
-            return Err(AccordError::Parse(format!(
+            return Err(ResarcioError::Parse(format!(
                 "expected `+++` header at line {}",
                 i + 1
             )));
@@ -204,7 +204,7 @@ pub fn parse_diff(input: &str) -> Result<Diff, AccordError> {
     }
 
     if files.is_empty() {
-        return Err(AccordError::EmptyDiff);
+        return Err(ResarcioError::EmptyDiff);
     }
 
     Ok(Diff { files })

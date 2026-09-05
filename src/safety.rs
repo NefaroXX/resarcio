@@ -1,18 +1,18 @@
 use std::path::{Path, PathBuf};
 
-use crate::error::AccordError;
+use crate::error::ResarcioError;
 
 /// Validate that a path component from a diff header is safe.
 /// Rejects absolute paths and `..` traversal.
-pub fn validate_path(path: &str) -> Result<String, AccordError> {
+pub fn validate_path(path: &str) -> Result<String, ResarcioError> {
     if path.starts_with('/') {
-        return Err(AccordError::UnsafePath(format!(
+        return Err(ResarcioError::UnsafePath(format!(
             "absolute path rejected: {}",
             path
         )));
     }
     if path.contains("..") {
-        return Err(AccordError::UnsafePath(format!(
+        return Err(ResarcioError::UnsafePath(format!(
             "path traversal rejected: {}",
             path
         )));
@@ -21,25 +21,25 @@ pub fn validate_path(path: &str) -> Result<String, AccordError> {
 }
 
 /// Resolve a validated path within a target directory, ensuring it doesn't escape.
-pub fn resolve_within(target_dir: &Path, relative: &str) -> Result<PathBuf, AccordError> {
+pub fn resolve_within(target_dir: &Path, relative: &str) -> Result<PathBuf, ResarcioError> {
     let resolved = target_dir.join(relative);
-    let canonical_target = target_dir.canonicalize().map_err(AccordError::Io)?;
+    let canonical_target = target_dir.canonicalize().map_err(ResarcioError::Io)?;
 
     // For paths that don't exist yet (new files), canonicalize the parent directory.
     let canonical_resolved = if resolved.exists() {
-        resolved.canonicalize().map_err(AccordError::Io)?
+        resolved.canonicalize().map_err(ResarcioError::Io)?
     } else if let Some(parent) = resolved.parent() {
-        let canonical_parent = parent.canonicalize().map_err(AccordError::Io)?;
+        let canonical_parent = parent.canonicalize().map_err(ResarcioError::Io)?;
         let file_name = resolved
             .file_name()
-            .ok_or_else(|| AccordError::UnsafePath(format!("invalid path: {}", relative)))?;
+            .ok_or_else(|| ResarcioError::UnsafePath(format!("invalid path: {}", relative)))?;
         canonical_parent.join(file_name)
     } else {
-        resolved.canonicalize().map_err(AccordError::Io)?
+        resolved.canonicalize().map_err(ResarcioError::Io)?
     };
 
     if !canonical_resolved.starts_with(&canonical_target) {
-        return Err(AccordError::UnsafePath(format!(
+        return Err(ResarcioError::UnsafePath(format!(
             "path escapes target directory: {}",
             relative
         )));
@@ -54,15 +54,15 @@ pub fn resolve_within(target_dir: &Path, relative: &str) -> Result<PathBuf, Acco
             .map(|m| m.file_type().is_symlink())
             .unwrap_or(false)
         {
-            let link_target = std::fs::read_link(&check).map_err(AccordError::Io)?;
+            let link_target = std::fs::read_link(&check).map_err(ResarcioError::Io)?;
             let absolute = if link_target.is_absolute() {
                 link_target
             } else {
                 check.parent().unwrap_or(&check).join(&link_target)
             };
-            let canonical_link = absolute.canonicalize().map_err(AccordError::Io)?;
+            let canonical_link = absolute.canonicalize().map_err(ResarcioError::Io)?;
             if !canonical_link.starts_with(&canonical_target) {
-                return Err(AccordError::UnsafePath(format!(
+                return Err(ResarcioError::UnsafePath(format!(
                     "symlink escapes target directory: {}",
                     relative
                 )));

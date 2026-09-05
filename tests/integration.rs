@@ -380,3 +380,67 @@ fn multiple_hunks() {
     assert!(ok);
     assert_eq!(read_file(d, "file.txt"), "aaa\nBBB\nccc\nddd\nEEE\nfff\n");
 }
+
+#[test]
+fn multi_hunk_unequal_counts() {
+    // Regression: C1 — multi-hunk where hunks have different add/remove counts.
+    // Hunk 1 replaces 2 lines with 1 (net -1). Hunk 2 replaces 1 line with 2 (net +1).
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    write_file(d, "file.txt", "aaa\nbbb\nccc\nddd\neee\nfff\n");
+    // Hunk 1: @@ -1,3 +1,2 @@ — remove bbb, keep aaa and ccc (3→2 lines)
+    // Hunk 2: @@ -4,3 +3,4 @@ — replace ddd with DDD+DDD, keep eee (3→4 lines)
+    write_file(
+        d,
+        "patch.diff",
+        "--- a/file.txt\n+++ b/file.txt\n\
+         @@ -1,3 +1,2 @@\n aaa\n-bbb\n-ccc\n+CCC\n ddd\n\
+         @@ -4,3 +3,4 @@\n ddd\n-eee\n+EEE1\n+EEE2\n fff\n",
+    );
+
+    let (ok, stdout, stderr) = run_resarcio(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
+    assert!(ok, "should succeed; stdout={stdout}; stderr={stderr}");
+    assert_eq!(read_file(d, "file.txt"), "aaa\nCCC\nddd\nEEE1\nEEE2\nfff\n");
+}
+
+#[test]
+fn pure_insertion_after_line() {
+    // Regression: T1 — pure insertion (old_count=0) inserts AFTER the referenced line.
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    write_file(d, "file.txt", "aaa\nbbb\nccc\n");
+    // @@ -2,0 +2,3 @@ means insert 3 lines after old line 2 (bbb).
+    write_file(
+        d,
+        "patch.diff",
+        "--- a/file.txt\n+++ b/file.txt\n\
+         @@ -2,0 +2,3 @@\n+NEW1\n+NEW2\n+NEW3\n",
+    );
+
+    let (ok, stdout, stderr) = run_resarcio(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
+    assert!(ok, "should succeed; stdout={stdout}; stderr={stderr}");
+    assert_eq!(
+        read_file(d, "file.txt"),
+        "aaa\nbbb\nNEW1\nNEW2\nNEW3\nccc\n"
+    );
+}
+
+#[test]
+fn path_traversal_on_deletion_blocked() {
+    // Regression: C2 — deletion patch with traversal in old_path must be rejected.
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    write_file(
+        d,
+        "patch.diff",
+        "--- a/../../etc/passwd\n+++ /dev/null\n\
+         @@ -1 +0 @@\n-line\n",
+    );
+
+    let (ok, _, stderr) = run_resarcio(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
+    assert!(!ok, "should reject path traversal in old_path");
+    assert!(
+        stderr.contains("unsafe path") || stderr.contains("path traversal"),
+        "error should mention path safety, got: {stderr}"
+    );
+}

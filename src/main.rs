@@ -45,21 +45,21 @@ fn main() {
     process::exit(exit_code);
 }
 
-fn run(cli: Cli) -> Result<(), error::AccordError> {
+fn run(cli: Cli) -> Result<(), error::ResarcioError> {
     // Read diff input from file or stdin
     let diff_input = match &cli.patch_file {
         Some(path) => {
-            let mut file = std::fs::File::open(path).map_err(error::AccordError::Io)?;
+            let mut file = std::fs::File::open(path).map_err(error::ResarcioError::Io)?;
             let mut contents = String::new();
             file.read_to_string(&mut contents)
-                .map_err(error::AccordError::Io)?;
+                .map_err(error::ResarcioError::Io)?;
             contents
         }
         None => {
             let mut contents = String::new();
             std::io::stdin()
                 .read_to_string(&mut contents)
-                .map_err(error::AccordError::Io)?;
+                .map_err(error::ResarcioError::Io)?;
             contents
         }
     };
@@ -68,28 +68,34 @@ fn run(cli: Cli) -> Result<(), error::AccordError> {
     let diff = parse::parse_diff(&diff_input)?;
 
     if diff.files.is_empty() {
-        return Err(error::AccordError::EmptyDiff);
+        return Err(error::ResarcioError::EmptyDiff);
     }
 
     // Validate target directory
     let target_dir = if cli.directory.exists() {
         if !cli.directory.is_dir() {
-            return Err(error::AccordError::IsADirectory(
+            return Err(error::ResarcioError::IsADirectory(
                 cli.directory.display().to_string(),
             ));
         }
         cli.directory.clone()
     } else {
-        return Err(error::AccordError::FileNotFound(
+        return Err(error::ResarcioError::FileNotFound(
             cli.directory.display().to_string(),
         ));
     };
 
     // Validate all paths before applying anything (skip /dev/null markers for
     // new/deleted files — they are diff syntax, not real filesystem paths).
+    // Both new_path and old_path must be validated to prevent path traversal
+    // attacks via crafted deletion patches (e.g. --- a/../../etc/passwd).
     for file_patch in &diff.files {
         if file_patch.new_path != "/dev/null" && file_patch.new_path != "dev/null" {
             let validated = safety::validate_path(&file_patch.new_path)?;
+            safety::resolve_within(&target_dir, &validated)?;
+        }
+        if file_patch.old_path != "/dev/null" && file_patch.old_path != "dev/null" {
+            let validated = safety::validate_path(&file_patch.old_path)?;
             safety::resolve_within(&target_dir, &validated)?;
         }
     }
