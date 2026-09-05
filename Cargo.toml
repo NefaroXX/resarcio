@@ -6,6 +6,10 @@ description = "Apply unified diffs to a working tree - the write-side counterpar
 license = "MIT"
 repository = "https://github.com/NefaroXX/accord"
 homepage = "https://github.com/NefaroXX/accord"
+readme = "README.md"
+keywords = ["diff", "patch", "unified-diff", "cli", "apply"]
+categories = ["command-line-utilities"]
+exclude = [".github/", "target/"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

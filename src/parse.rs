@@ -3,9 +3,13 @@ use crate::error::AccordError;
 /// A single line in a hunk.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HunkLine {
+    /// A context line (unchanged), prefixed with a space in the diff.
     Context(String),
+    /// An added line, prefixed with `+` in the diff.
     Added(String),
+    /// A removed line, prefixed with `-` in the diff.
     Removed(String),
+    /// The `\ No newline at end of file` marker.
     NoNewlineMarker,
 }
 
