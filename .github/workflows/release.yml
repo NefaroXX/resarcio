@@ -41,45 +41,21 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
-      - name: Create release
+      - name: Create release and upload assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${GITHUB_REF_NAME}"
-          repo="${GITHUB_REPOSITORY}"
-          api="https://api.github.com/repos/${repo}"
-
-          # Delete existing release for this tag if present
-          release_id=$(curl -s -H "Authorization: Bearer ${GH_TOKEN}" \
-            "${api}/releases/tags/${tag}" | jq -r '.id // empty')
-          if [ -n "$release_id" ]; then
-            echo "Deleting existing release ${release_id} for ${tag}"
-            curl -s -X DELETE -H "Authorization: Bearer ${GH_TOKEN}" \
-              "${api}/releases/${release_id}" > /dev/null
-          fi
-
-          # Create the release
-          curl -s -X POST -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Content-Type: application/json" \
-            "${api}/releases" -d "{
-              \"tag_name\": \"${tag}\",
-              \"name\": \"${tag}\",
-              \"generate_release_notes\": true
-            }" > /dev/null
-
-          # Upload each binary asset
-          release_id=$(curl -s -H "Authorization: Bearer ${GH_TOKEN}" \
-            "${api}/releases/tags/${tag}" | jq -r '.id')
-          for file in artifacts/accord-*; do
-            name=$(basename "$file")
-            echo "Uploading ${name}"
-            curl -s -X POST -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Content-Type: application/octet-stream" \
-              "${api}/releases/${release_id}/assets?name=${name}" \
-              --data-binary "@${file}" > /dev/null
-          done
-          echo "Release ${tag} created with assets"
+          # Delete existing release if present (idempotent re-run)
+          gh release delete "$tag" --repo "${GITHUB_REPOSITORY}" --yes --cleanup-tag 2>/dev/null || true
+          # Create release with all binaries
+          gh release create "$tag" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "$tag" \
+            --generate-notes \
+            artifacts/accord-*
