@@ -210,6 +210,62 @@ pub fn parse_diff(input: &str) -> Result<Diff, ResarcioError> {
     Ok(Diff { files })
 }
 
+/// Reverse a diff: swap old/new paths, swap Added/Removed, remap hunk headers.
+///
+/// This transforms a diff so that applying it will undo the original change.
+pub fn reverse_diff(diff: &Diff) -> Diff {
+    let files = diff
+        .files
+        .iter()
+        .map(|fp| {
+            let mut reversed_hunks: Vec<Hunk> = fp
+                .hunks
+                .iter()
+                .map(|h| {
+                    let new_lines: Vec<HunkLine> = h
+                        .lines
+                        .iter()
+                        .map(|line| match line {
+                            HunkLine::Added(s) => HunkLine::Removed(s.clone()),
+                            HunkLine::Removed(s) => HunkLine::Added(s.clone()),
+                            other => other.clone(),
+                        })
+                        .collect();
+
+                    Hunk {
+                        old_start: h.new_start,
+                        old_count: h.new_count,
+                        new_start: h.old_start,
+                        new_count: h.old_count,
+                        lines: new_lines,
+                    }
+                })
+                .collect();
+
+            // Reverse hunk order (last hunk first) so splicing doesn't invalidate earlier positions
+            reversed_hunks.reverse();
+
+            // Swap paths: the original "new" becomes "old" and vice versa.
+            // For new-file (--- /dev/null): old=/dev/null, new=foo → reversed: old=foo, new=/dev/null (deletion)
+            // For deletion (+++ /dev/null): old=foo, new=/dev/null → reversed: old=/dev/null, new=foo (creation)
+            let new_old_path = fp.new_path.clone();
+            let new_new_path = fp.old_path.clone();
+            let is_new_file = fp.is_deleted;
+            let is_deleted = fp.is_new_file;
+
+            FilePatch {
+                old_path: new_old_path,
+                new_path: new_new_path,
+                is_new_file,
+                is_deleted,
+                hunks: reversed_hunks,
+            }
+        })
+        .collect();
+
+    Diff { files }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

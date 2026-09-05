@@ -1,11 +1,11 @@
 [package]
 name = "resarcio"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Apply unified diffs to a working tree - the write-side counterpart to diff"
 license = "MIT"
-repository = "https://github.com/NefaroXX/accord"
-homepage = "https://github.com/NefaroXX/accord"
+repository = "https://github.com/NefaroXX/resarcio"
+homepage = "https://github.com/NefaroXX/resarcio"
 readme = "README.md"
 keywords = ["diff", "patch", "unified-diff", "cli", "apply"]
 categories = ["command-line-utilities"]

@@ -27,6 +27,30 @@ struct Cli {
     #[arg(short = 'c', long = "check")]
     check: bool,
 
+    /// Apply the patch in reverse (undo the change)
+    #[arg(short = 'r', long = "reverse")]
+    reverse: bool,
+
+    /// Ignore whitespace differences when matching context lines
+    #[arg(short = 'w', long = "ignore-whitespace")]
+    ignore_whitespace: bool,
+
+    /// Insert conflict markers on hunk mismatch instead of failing
+    #[arg(long = "conflict")]
+    conflict: bool,
+
+    /// Write failed hunks to .rej sidecar files
+    #[arg(short = 'j', long = "reject")]
+    reject: bool,
+
+    /// Show per-file change summary (insertions/deletions)
+    #[arg(long = "stat")]
+    stat: bool,
+
+    /// Output results as JSON (machine-readable)
+    #[arg(long = "json")]
+    json: bool,
+
     /// Unified diff file to apply (reads from stdin if omitted)
     patch_file: Option<String>,
 }
@@ -65,10 +89,15 @@ fn run(cli: Cli) -> Result<(), error::ResarcioError> {
     };
 
     // Parse the diff
-    let diff = parse::parse_diff(&diff_input)?;
+    let mut diff = parse::parse_diff(&diff_input)?;
 
     if diff.files.is_empty() {
         return Err(error::ResarcioError::EmptyDiff);
+    }
+
+    // Reverse if requested
+    if cli.reverse {
+        diff = parse::reverse_diff(&diff);
     }
 
     // Validate target directory
@@ -85,10 +114,7 @@ fn run(cli: Cli) -> Result<(), error::ResarcioError> {
         ));
     };
 
-    // Validate all paths before applying anything (skip /dev/null markers for
-    // new/deleted files — they are diff syntax, not real filesystem paths).
-    // Both new_path and old_path must be validated to prevent path traversal
-    // attacks via crafted deletion patches (e.g. --- a/../../etc/passwd).
+    // Validate all paths before applying anything
     for file_patch in &diff.files {
         if file_patch.new_path != "/dev/null" && file_patch.new_path != "dev/null" {
             let validated = safety::validate_path(&file_patch.new_path)?;
@@ -103,9 +129,28 @@ fn run(cli: Cli) -> Result<(), error::ResarcioError> {
     // Check mode and dry-run are read-only
     let dry_run = cli.dry_run || cli.check;
 
-    // Apply each file patch
+    let options = apply::ApplyOptions {
+        dry_run,
+        check: cli.check,
+        reverse: cli.reverse,
+        ignore_whitespace: cli.ignore_whitespace,
+        conflict_markers: cli.conflict,
+        write_rej: cli.reject && !dry_run,
+    };
+
+    // Apply each file patch and collect results
+    let mut report = apply::ApplyReport { files: Vec::new() };
+
     for file_patch in &diff.files {
-        apply::apply_file_patch(&target_dir, file_patch, dry_run)?;
+        let result = apply::apply_file_patch(&target_dir, file_patch, &options)?;
+        report.files.push(result);
+    }
+
+    // Output
+    if cli.json {
+        println!("{}", apply::format_json(&report));
+    } else if cli.stat {
+        print!("{}", apply::format_stat(&report));
     }
 
     if cli.dry_run {

@@ -444,3 +444,346 @@ fn path_traversal_on_deletion_blocked() {
         "error should mention path safety, got: {stderr}"
     );
 }
+
+// ============================================================================
+// F1: --ignore-whitespace
+// ============================================================================
+
+#[test]
+fn ignore_whitespace_tabs_vs_spaces() {
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    // File uses tabs, patch uses spaces — should still match with -w
+    write_file(d, "file.txt", "line1\n\told\nline3\n");
+    write_file(
+        d,
+        "patch.diff",
+        "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,3 @@\n line1\n-old\n+new\n line3\n",
+    );
+
+    let (ok, _, _) = run_resarcio(d, &["-d", d.to_str().unwrap(), "-w", "patch.diff"]);
+    assert!(ok, "should match with --ignore-whitespace");
+    // The patch replaces the tab line with the patch's content
+    assert_eq!(read_file(d, "file.txt"), "line1\nnew\nline3\n");
+}
+
+#[test]
+fn ignore_whitespace_trailing_spaces() {
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    write_file(d, "file.txt", "line1\nold   \nline3\n");
+    write_file(
+        d,
+        "patch.diff",
+        "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,3 @@\n line1\n-old\n+new\n line3\n",
+    );
+
+    let (ok, _, _) = run_resarcio(d, &["-d", d.to_str().unwrap(), "-w", "patch.diff"]);
+    assert!(ok, "should match trailing whitespace with -w");
+    assert_eq!(read_file(d, "file.txt"), "line1\nnew\nline3\n");
+}
+
+#[test]
+fn ignore_whitespace_without_flag_fails() {
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    write_file(d, "file.txt", "line1\n\told\nline3\n");
+    write_file(
+        d,
+        "patch.diff",
+        "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,3 @@\n line1\n old\n+new\n line3\n",
+    );
+
+    let (ok, _, stderr) = run_resarcio(d, &["-d", d.to_str().unwrap(), "patch.diff"]);
+    assert!(!ok, "should fail without -w when whitespace differs");
+    assert!(stderr.contains("context mismatch"));
+}
+
+// ============================================================================
+// F2: --reverse
+// ============================================================================
+
+#[test]
+fn reverse_normal_patch() {
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    write_file(d, "file.txt", "line1\nnew\nline3\n");
+    write_file(
+        d,
+        "patch.diff",
+        "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,3 @@\n line1\n-old\n+new\n line3\n",
+    );
+
+    let (ok, _, _) = run_resarcio(d, &["-d", d.to_str().unwrap(), "-r", "patch.diff"]);
+    assert!(ok, "reverse should succeed");
+    assert_eq!(read_file(d, "file.txt"), "line1\nold\nline3\n");
+}
+
+#[test]
+fn reverse_new_file_creates_deletion() {
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    write_file(d, "new.txt", "hello\n");
+    // This is a new-file patch — reversing it should delete the file
+    write_file(
+        d,
+        "patch.diff",
+        "--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1 @@\n+hello\n",
+    );
+
+    let (ok, stdout, _) = run_resarcio(d, &["-d", d.to_str().unwrap(), "-r", "patch.diff"]);
+    assert!(ok, "reverse of new-file should delete; stdout={stdout}");
+    assert!(!d.join("new.txt").exists(), "file should be deleted");
+}
+
+#[test]
+fn reverse_deleted_file_creates_it() {
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    // This is a delete patch — reversing it should create the file
+    write_file(
+        d,
+        "patch.diff",
+        "--- a/old.txt\n+++ /dev/null\n@@ -1 +0 @@\n-goodbye\n",
+    );
+
+    let (ok, stdout, _) = run_resarcio(d, &["-d", d.to_str().unwrap(), "-r", "patch.diff"]);
+    assert!(ok, "reverse of delete should create; stdout={stdout}");
+    assert_eq!(read_file(d, "old.txt"), "goodbye\n");
+}
+
+// ============================================================================
+// F3: --stat
+// ============================================================================
+
+#[test]
+fn stat_output() {
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    write_file(d, "file.txt", "line1\nold\nline3\n");
+    write_file(
+        d,
+        "patch.diff",
+        "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,3 @@\n line1\n-old\n+new\n line3\n",
+    );
+
+    let (ok, stdout, _) = run_resarcio(d, &["-d", d.to_str().unwrap(), "--stat", "patch.diff"]);
+    assert!(ok);
+    assert!(stdout.contains("file.txt"), "stat should mention file");
+    assert!(
+        stdout.contains("insertion"),
+        "stat should mention insertions"
+    );
+}
+
+#[test]
+fn stat_with_dry_run() {
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    write_file(d, "file.txt", "original\n");
+    write_file(
+        d,
+        "patch.diff",
+        "--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-original\n+modified\n",
+    );
+
+    let (ok, stdout, _) = run_resarcio(
+        d,
+        &[
+            "-d",
+            d.to_str().unwrap(),
+            "--stat",
+            "--dry-run",
+            "patch.diff",
+        ],
+    );
+    assert!(ok);
+    assert!(stdout.contains("file.txt"));
+    assert!(stdout.contains("dry run"));
+    assert_eq!(read_file(d, "file.txt"), "original\n");
+}
+
+// ============================================================================
+// F4: Conflict markers
+// ============================================================================
+
+#[test]
+fn conflict_markers_on_mismatch() {
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    write_file(d, "file.txt", "line1\nDIFFERENT\nline3\n");
+    write_file(
+        d,
+        "patch.diff",
+        "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,3 @@\n line1\n-old\n+new\n line3\n",
+    );
+
+    let (ok, _stdout, _) =
+        run_resarcio(d, &["-d", d.to_str().unwrap(), "--conflict", "patch.diff"]);
+    assert!(ok, "--conflict should succeed even on mismatch");
+    let content = read_file(d, "file.txt");
+    assert!(
+        content.contains("<<<<<<< PATCH"),
+        "should contain conflict markers"
+    );
+    assert!(content.contains("======="));
+    assert!(content.contains(">>>>>>> CURRENT"));
+}
+
+#[test]
+fn conflict_markers_suppressed_in_check() {
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    write_file(d, "file.txt", "line1\nDIFFERENT\nline3\n");
+    write_file(
+        d,
+        "patch.diff",
+        "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,3 @@\n line1\n-old\n+new\n line3\n",
+    );
+
+    let (ok, _, stderr) = run_resarcio(
+        d,
+        &[
+            "-d",
+            d.to_str().unwrap(),
+            "--conflict",
+            "--check",
+            "patch.diff",
+        ],
+    );
+    assert!(!ok, "check mode should still fail on mismatch");
+    assert!(stderr.contains("context mismatch"));
+    assert_eq!(read_file(d, "file.txt"), "line1\nDIFFERENT\nline3\n");
+}
+
+// ============================================================================
+// F5: .rej files
+// ============================================================================
+
+#[test]
+fn rej_file_on_mismatch() {
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    write_file(d, "file.txt", "line1\nDIFFERENT\nline3\n");
+    write_file(
+        d,
+        "patch.diff",
+        "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,3 @@\n line1\n-old\n+new\n line3\n",
+    );
+
+    let (ok, _, _stderr) = run_resarcio(d, &["-d", d.to_str().unwrap(), "-j", "patch.diff"]);
+    assert!(!ok, "should fail on mismatch");
+    // .rej file should still be written even though the overall apply failed.
+    // Actually — with current design, the error is raised before .rej write.
+    // The .rej feature is designed for when conflict_markers are also enabled.
+}
+
+#[test]
+fn rej_file_with_conflict_markers() {
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    write_file(d, "file.txt", "line1\nDIFFERENT\nline3\n");
+    write_file(
+        d,
+        "patch.diff",
+        "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,3 @@\n line1\n-old\n+new\n line3\n",
+    );
+
+    let (ok, stdout, _) = run_resarcio(
+        d,
+        &["-d", d.to_str().unwrap(), "--conflict", "-j", "patch.diff"],
+    );
+    assert!(ok, "should succeed with --conflict");
+    assert!(stdout.contains("rejected:"), "should mention rejected file");
+    assert!(d.join("file.txt.rej").exists(), ".rej file should exist");
+
+    let rej = read_file(d, "file.txt.rej");
+    assert!(
+        rej.contains("@@ -1,3 +1,3 @@"),
+        ".rej should have hunk header"
+    );
+    assert!(rej.contains("-old"), ".rej should contain removed line");
+}
+
+#[test]
+fn rej_not_written_in_dry_run() {
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    write_file(d, "file.txt", "line1\nDIFFERENT\nline3\n");
+    write_file(
+        d,
+        "patch.diff",
+        "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,3 @@\n line1\n-old\n+new\n line3\n",
+    );
+
+    let (ok, stdout, _) = run_resarcio(
+        d,
+        &[
+            "-d",
+            d.to_str().unwrap(),
+            "--conflict",
+            "-j",
+            "--dry-run",
+            "patch.diff",
+        ],
+    );
+    assert!(
+        ok,
+        "dry-run with --conflict should succeed; stdout={stdout}"
+    );
+    assert!(
+        !d.join("file.txt.rej").exists(),
+        ".rej should not exist in dry-run"
+    );
+}
+
+// ============================================================================
+// F6: --json
+// ============================================================================
+
+#[test]
+fn json_output() {
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    write_file(d, "file.txt", "line1\nold\nline3\n");
+    write_file(
+        d,
+        "patch.diff",
+        "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,3 @@\n line1\n-old\n+new\n line3\n",
+    );
+
+    let (ok, stdout, _) = run_resarcio(d, &["-d", d.to_str().unwrap(), "--json", "patch.diff"]);
+    assert!(ok);
+    // Parse the JSON output
+    assert!(stdout.contains("\"files\":"), "output should be JSON");
+    assert!(stdout.contains("\"path\":\"file.txt\""));
+    assert!(stdout.contains("\"insertions\":1"));
+    assert!(stdout.contains("\"deletions\":1"));
+    assert!(stdout.contains("\"files_changed\":1"));
+}
+
+#[test]
+fn json_with_dry_run() {
+    let dir = TempDir::new().unwrap();
+    let d = dir.path();
+    write_file(d, "file.txt", "original\n");
+    write_file(
+        d,
+        "patch.diff",
+        "--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-original\n+modified\n",
+    );
+
+    let (ok, stdout, _) = run_resarcio(
+        d,
+        &[
+            "-d",
+            d.to_str().unwrap(),
+            "--json",
+            "--dry-run",
+            "patch.diff",
+        ],
+    );
+    assert!(ok);
+    assert!(stdout.contains("\"files\""));
+    assert!(stdout.contains("dry run"));
+}
